@@ -294,54 +294,78 @@ def render_chapter_catalog():
     tab_catalog, tab_volumes = st.tabs(["📖 章节列表", "📑 分卷管理"])
     
     with tab_catalog:
-        _render_chapter_list()
+        try:
+            _render_chapter_list()
+        except Exception as e:
+            st.error(f"加载章节列表时出错：{str(e)}")
+            st.exception(e)
     
     with tab_volumes:
-        _render_volume_management()
+        try:
+            _render_volume_management()
+        except Exception as e:
+            st.error(f"加载分卷管理时出错：{str(e)}")
+            st.exception(e)
 
 
 def _render_chapter_list():
     """渲染章节列表"""
-    index_data = parse_chapter_index()
+    try:
+        index_data = parse_chapter_index()
+    except Exception as e:
+        st.error(f"解析章节目录失败：{str(e)}")
+        st.info("请检查 `data/plot/chapter_index.md` 文件格式是否正确")
+        return
     
     # 显示分卷章节
-    if index_data["volumes"]:
+    if index_data.get("volumes"):
         for vol_num in sorted(index_data["volumes"].keys(), key=int):
             chapters = index_data["volumes"][vol_num]
             st.markdown(f"### 第{vol_num}卷")
             
             for ch in chapters:
-                _render_chapter_button(ch)
+                try:
+                    _render_chapter_button(ch)
+                except Exception as e:
+                    st.warning(f"渲染章节按钮时出错：{str(e)}")
+                    continue
             
             st.markdown("---")
     
     # 显示未分卷章节
-    if index_data["ungrouped"]:
+    if index_data.get("ungrouped"):
         st.markdown("### 未分卷章节")
         for ch in index_data["ungrouped"]:
-            _render_chapter_button(ch)
+            try:
+                _render_chapter_button(ch)
+            except Exception as e:
+                st.warning(f"渲染章节按钮时出错：{str(e)}")
+                continue
     
-    if not index_data["volumes"] and not index_data["ungrouped"]:
+    if not index_data.get("volumes") and not index_data.get("ungrouped"):
         _render_empty_chapter_list()
 
 
 def _render_chapter_button(ch):
     """渲染章节按钮"""
-    chapter_no = ch["chapter_no"]
-    summary = ch["summary"]
-    summary_preview = summary[:50] + "..." if len(summary) > 50 else summary
-    
-    chapter_button_key = f"btn_chapter_{chapter_no}"
-    if st.button(
-        f"**{chapter_no}**" + (f"\n💡 {summary_preview}" if summary else ""),
-        key=chapter_button_key,
-        help=summary if summary else "点击查看详情",
-        use_container_width=True,
-        type="primary" if st.session_state.selected_chapter == chapter_no else "secondary"
-    ):
-        st.session_state.selected_chapter = chapter_no
-        st.session_state.chapter_detail_view = True
-        st.rerun()
+    try:
+        chapter_no = ch.get("chapter_no", "未知章节")
+        summary = ch.get("summary", "")
+        summary_preview = summary[:50] + "..." if len(summary) > 50 else summary
+        
+        chapter_button_key = f"btn_chapter_{chapter_no}"
+        if st.button(
+            f"**{chapter_no}**" + (f"\n💡 {summary_preview}" if summary else ""),
+            key=chapter_button_key,
+            help=summary if summary else "点击查看详情",
+            use_container_width=True,
+            type="primary" if st.session_state.selected_chapter == chapter_no else "secondary"
+        ):
+            st.session_state.selected_chapter = chapter_no
+            st.session_state.chapter_detail_view = True
+            st.rerun()
+    except Exception as e:
+        st.warning(f"渲染章节按钮失败：{str(e)}")
 
 
 def _render_empty_chapter_list():
@@ -368,61 +392,87 @@ def _render_empty_chapter_list():
 
 def _render_volume_management():
     """渲染分卷管理"""
-    st.markdown("#### 📑 分卷管理")
-    
-    volumes_dir = DATA_PATH / "plot" / "volumes"
-    volumes_dir.mkdir(parents=True, exist_ok=True)
-    volume_files = sorted(volumes_dir.glob("volume_*.md"), key=lambda x: int(x.stem.split('_')[1]))
-    
-    if volume_files:
-        selected_volume_file = st.selectbox(
-            "选择分卷",
-            volume_files,
-            format_func=lambda x: f"第{int(x.stem.split('_')[1])}卷",
-            key="volume_select"
-        )
+    try:
+        st.markdown("#### 📑 分卷管理")
         
-        volume_content = selected_volume_file.read_text(encoding="utf-8")
-        edited_volume = st.text_area(
-            "分卷细纲",
-            value=volume_content,
-            height=300,
-            key=f"volume_edit_{selected_volume_file.name}"
-        )
+        volumes_dir = DATA_PATH / "plot" / "volumes"
+        volumes_dir.mkdir(parents=True, exist_ok=True)
         
-        col_vol1, col_vol2 = st.columns(2)
-        with col_vol1:
-            if st.button("💾 保存", use_container_width=True):
-                save_file(selected_volume_file, edited_volume)
-                st.success("保存成功！")
-                st.rerun()
+        try:
+            volume_files = sorted(volumes_dir.glob("volume_*.md"), key=lambda x: int(x.stem.split('_')[1]))
+        except (ValueError, IndexError) as e:
+            st.warning(f"解析分卷文件名时出错：{str(e)}")
+            volume_files = sorted(volumes_dir.glob("volume_*.md"), key=lambda x: x.name)
         
-        with col_vol2:
-            if st.button("🗑️ 删除", use_container_width=True):
-                delete_file(selected_volume_file)
-                st.success("删除成功！")
-                st.rerun()
-    else:
-        st.info("暂无分卷")
-    
-    st.markdown("---")
-    st.markdown("#### ➕ 新建分卷")
-    new_vol_no = st.number_input("分卷号", min_value=1, max_value=100, value=1, step=1, key="new_vol_no")
-    new_vol_content = st.text_area(
-        "分卷细纲",
-        height=200,
-        placeholder=f"# 第{new_vol_no}卷 细纲\n\n## 分卷主线\n\n## 主要情节\n\n## 角色发展\n",
-        key="new_vol_content"
-    )
-    
-    if st.button("✨ 创建分卷", use_container_width=True):
-        new_vol_file = volumes_dir / f"volume_{new_vol_no:02d}.md"
-        if new_vol_file.exists():
-            st.error("该分卷已存在")
+        if volume_files:
+            try:
+                selected_volume_file = st.selectbox(
+                    "选择分卷",
+                    volume_files,
+                    format_func=lambda x: f"第{int(x.stem.split('_')[1])}卷" if '_' in x.stem else x.stem,
+                    key="volume_select"
+                )
+                
+                try:
+                    volume_content = selected_volume_file.read_text(encoding="utf-8")
+                except Exception as e:
+                    st.error(f"读取分卷文件失败：{str(e)}")
+                    volume_content = ""
+                
+                edited_volume = st.text_area(
+                    "分卷细纲",
+                    value=volume_content,
+                    height=300,
+                    key=f"volume_edit_{selected_volume_file.name}"
+                )
+                
+                col_vol1, col_vol2 = st.columns(2)
+                with col_vol1:
+                    if st.button("💾 保存", use_container_width=True):
+                        try:
+                            save_file(selected_volume_file, edited_volume)
+                            st.success("保存成功！")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"保存失败：{str(e)}")
+                
+                with col_vol2:
+                    if st.button("🗑️ 删除", use_container_width=True):
+                        try:
+                            delete_file(selected_volume_file)
+                            st.success("删除成功！")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"删除失败：{str(e)}")
+            except Exception as e:
+                st.error(f"加载分卷列表时出错：{str(e)}")
         else:
-            save_file(new_vol_file, new_vol_content)
-            st.success("创建成功！")
-            st.rerun()
+            st.info("暂无分卷")
+        
+        st.markdown("---")
+        st.markdown("#### ➕ 新建分卷")
+        new_vol_no = st.number_input("分卷号", min_value=1, max_value=100, value=1, step=1, key="new_vol_no")
+        new_vol_content = st.text_area(
+            "分卷细纲",
+            height=200,
+            placeholder=f"# 第{new_vol_no}卷 细纲\n\n## 分卷主线\n\n## 主要情节\n\n## 角色发展\n",
+            key="new_vol_content"
+        )
+        
+        if st.button("✨ 创建分卷", use_container_width=True):
+            try:
+                new_vol_file = volumes_dir / f"volume_{new_vol_no:02d}.md"
+                if new_vol_file.exists():
+                    st.error("该分卷已存在")
+                else:
+                    save_file(new_vol_file, new_vol_content)
+                    st.success("创建成功！")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"创建分卷失败：{str(e)}")
+    except Exception as e:
+        st.error(f"渲染分卷管理时出错：{str(e)}")
+        st.exception(e)
 
 
 def render():
