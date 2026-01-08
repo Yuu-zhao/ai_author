@@ -289,23 +289,32 @@ def _show_prompt_preview(chapter_no_val, chapter_goal_val, volume_no_val):
 
 def render_chapter_catalog():
     """渲染章节目录"""
-    st.subheader("📚 章节目录")
-    
-    tab_catalog, tab_volumes = st.tabs(["📖 章节列表", "📑 分卷管理"])
-    
-    with tab_catalog:
-        try:
-            _render_chapter_list()
-        except Exception as e:
-            st.error(f"加载章节列表时出错：{str(e)}")
-            st.exception(e)
-    
-    with tab_volumes:
-        try:
-            _render_volume_management()
-        except Exception as e:
-            st.error(f"加载分卷管理时出错：{str(e)}")
-            st.exception(e)
+    try:
+        st.subheader("📚 章节目录")
+        
+        tab_catalog, tab_volumes = st.tabs(["📖 章节列表", "📑 分卷管理"])
+        
+        with tab_catalog:
+            try:
+                _render_chapter_list()
+            except Exception as e:
+                st.error(f"加载章节列表时出错：{str(e)}")
+                st.exception(e)
+                # 显示一个基本的错误恢复界面
+                st.info("💡 如果问题持续，请检查 `data/plot/chapter_index.md` 文件")
+        
+        with tab_volumes:
+            try:
+                _render_volume_management()
+            except Exception as e:
+                st.error(f"加载分卷管理时出错：{str(e)}")
+                st.exception(e)
+                # 显示一个基本的错误恢复界面
+                st.info("💡 如果问题持续，请检查 `data/plot/volumes/` 目录")
+    except Exception as e:
+        st.error(f"渲染章节目录时发生严重错误：{str(e)}")
+        st.exception(e)
+        st.info("💡 请刷新页面重试，或检查数据文件是否损坏")
 
 
 def _render_chapter_list():
@@ -317,32 +326,69 @@ def _render_chapter_list():
         st.info("请检查 `data/plot/chapter_index.md` 文件格式是否正确")
         return
     
+    # 确保index_data有正确的结构
+    if not isinstance(index_data, dict):
+        st.error("章节目录数据格式错误")
+        return
+    
+    volumes = index_data.get("volumes", {})
+    ungrouped = index_data.get("ungrouped", [])
+    
     # 显示分卷章节
-    if index_data.get("volumes"):
-        for vol_num in sorted(index_data["volumes"].keys(), key=int):
-            chapters = index_data["volumes"][vol_num]
-            st.markdown(f"### 第{vol_num}卷")
+    if volumes:
+        try:
+            # 安全地排序分卷号
+            sorted_volumes = []
+            for vol_num in volumes.keys():
+                try:
+                    sorted_volumes.append(int(vol_num))
+                except (ValueError, TypeError):
+                    # 如果无法转换为整数，跳过或使用字符串排序
+                    continue
             
-            for ch in chapters:
+            sorted_volumes = sorted(sorted_volumes)
+            
+            for vol_num in sorted_volumes:
+                vol_str = str(vol_num)
+                if vol_str not in volumes:
+                    continue
+                    
+                chapters = volumes[vol_str]
+                if not isinstance(chapters, list):
+                    continue
+                    
+                st.markdown(f"### 第{vol_num}卷")
+                
+                for ch in chapters:
+                    if not isinstance(ch, dict):
+                        continue
+                    try:
+                        _render_chapter_button(ch)
+                    except Exception as e:
+                        st.warning(f"渲染章节按钮时出错：{str(e)}")
+                        continue
+                
+                st.markdown("---")
+        except Exception as e:
+            st.error(f"渲染分卷章节时出错：{str(e)}")
+            st.exception(e)
+    
+    # 显示未分卷章节
+    if ungrouped and isinstance(ungrouped, list):
+        try:
+            st.markdown("### 未分卷章节")
+            for ch in ungrouped:
+                if not isinstance(ch, dict):
+                    continue
                 try:
                     _render_chapter_button(ch)
                 except Exception as e:
                     st.warning(f"渲染章节按钮时出错：{str(e)}")
                     continue
-            
-            st.markdown("---")
+        except Exception as e:
+            st.error(f"渲染未分卷章节时出错：{str(e)}")
     
-    # 显示未分卷章节
-    if index_data.get("ungrouped"):
-        st.markdown("### 未分卷章节")
-        for ch in index_data["ungrouped"]:
-            try:
-                _render_chapter_button(ch)
-            except Exception as e:
-                st.warning(f"渲染章节按钮时出错：{str(e)}")
-                continue
-    
-    if not index_data.get("volumes") and not index_data.get("ungrouped"):
+    if not volumes and not ungrouped:
         _render_empty_chapter_list()
 
 
@@ -370,24 +416,37 @@ def _render_chapter_button(ch):
 
 def _render_empty_chapter_list():
     """渲染空章节列表"""
-    st.info("暂无章节，请先生成章节")
-    
-    # 从现有章节生成目录
-    chapter_files = get_files(DATA_PATH / "chapters")
-    if chapter_files:
-        if st.button("🔄 从现有章节生成目录", use_container_width=True):
-            index_file = DATA_PATH / "plot" / "chapter_index.md"
-            index_content = "# 章节目录\n\n本文件自动维护，包含所有章节的概要信息。\n\n"
-            
-            for cf in sorted(chapter_files):
-                chapter_content = cf.read_text(encoding="utf-8")
-                chapter_no = cf.stem
-                summary = extract_chapter_summary(chapter_content, chapter_no)
-                index_content += f"- {chapter_no}：{summary}\n"
-            
-            save_file(index_file, index_content)
-            st.success("章节目录已生成！")
-            st.rerun()
+    try:
+        st.info("暂无章节，请先生成章节")
+        
+        # 从现有章节生成目录
+        try:
+            chapter_files = get_files(DATA_PATH / "chapters")
+            if chapter_files:
+                if st.button("🔄 从现有章节生成目录", use_container_width=True):
+                    try:
+                        index_file = DATA_PATH / "plot" / "chapter_index.md"
+                        index_content = "# 章节目录\n\n本文件自动维护，包含所有章节的概要信息。\n\n"
+                        
+                        for cf in sorted(chapter_files):
+                            try:
+                                chapter_content = cf.read_text(encoding="utf-8")
+                                chapter_no = cf.stem
+                                summary = extract_chapter_summary(chapter_content, chapter_no)
+                                index_content += f"- {chapter_no}：{summary}\n"
+                            except Exception as e:
+                                st.warning(f"处理章节文件 {cf.name} 时出错：{str(e)}")
+                                continue
+                        
+                        save_file(index_file, index_content)
+                        st.success("章节目录已生成！")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"生成章节目录失败：{str(e)}")
+        except Exception as e:
+            st.warning(f"获取章节文件列表时出错：{str(e)}")
+    except Exception as e:
+        st.error(f"渲染空章节列表时出错：{str(e)}")
 
 
 def _render_volume_management():
@@ -477,17 +536,30 @@ def _render_volume_management():
 
 def render():
     """渲染首页"""
-    st.title("🏠 小说创作工作台")
-    
-    # 左右分栏布局
-    main_col1, main_col2 = st.columns([1.2, 1])
-    
-    with main_col1:
-        if st.session_state.chapter_detail_view and st.session_state.selected_chapter:
-            render_chapter_detail_view()
-        else:
-            render_chapter_generation_view()
-    
-    with main_col2:
-        render_chapter_catalog()
+    try:
+        st.title("🏠 小说创作工作台")
+        
+        # 左右分栏布局
+        main_col1, main_col2 = st.columns([1.2, 1])
+        
+        with main_col1:
+            try:
+                if st.session_state.chapter_detail_view and st.session_state.selected_chapter:
+                    render_chapter_detail_view()
+                else:
+                    render_chapter_generation_view()
+            except Exception as e:
+                st.error(f"渲染左侧内容时出错：{str(e)}")
+                st.exception(e)
+        
+        with main_col2:
+            try:
+                render_chapter_catalog()
+            except Exception as e:
+                st.error(f"渲染右侧章节目录时出错：{str(e)}")
+                st.exception(e)
+    except Exception as e:
+        st.error(f"渲染首页时发生严重错误：{str(e)}")
+        st.exception(e)
+        st.info("💡 请刷新页面重试")
 

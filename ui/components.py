@@ -2,27 +2,41 @@
 import streamlit as st
 from pathlib import Path
 from ui.utils import get_files
+from ui.router import ROUTES, get_current_route, get_route_name, navigate_to
 
 DATA_PATH = Path("data")
 
 
 def render_sidebar_navigation():
-    """渲染侧边栏导航"""
+    """渲染侧边栏导航（使用查询参数路由）"""
     st.sidebar.title("📖 小说 AI 写作工坊")
     st.sidebar.markdown("---")
     
-    page = st.sidebar.radio(
-        "导航",
-        [
-            "🏠 首页",
-            "📝 基本信息",
-            "📋 剧情大纲",
-            "⚙️ 设定管理",
-            "👤 角色管理",
-            "📖 剧情状态"
-        ]
-    )
-    return page
+    # 获取当前路由
+    current_route = get_current_route()
+    current_page_name = get_route_name(current_route)
+    
+    # 渲染导航链接
+    st.sidebar.markdown("### 📑 导航")
+    
+    for route_key, (route_name, _) in ROUTES.items():
+        # 判断是否为当前页面
+        is_active = current_route == route_key
+        
+        if is_active:
+            # 当前页面高亮显示
+            st.sidebar.markdown(f"**▶️ {route_name}**")
+        else:
+            # 使用按钮进行导航
+            if st.sidebar.button(
+                route_name,
+                key=f"nav_{route_key}",
+                use_container_width=True,
+                type="secondary"
+            ):
+                navigate_to(route_key)
+    
+    return current_page_name
 
 
 def render_sidebar_stats():
